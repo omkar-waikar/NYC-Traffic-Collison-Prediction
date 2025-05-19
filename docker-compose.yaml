@@ -1,0 +1,95 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    # volumes:
+    #   - kafka_internal_data:/var/lib/kafka
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:6
+    ports:
+      - "27017:27017"
+    command: ["mongod", "--bind_ip_all"]
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+
+  mongo-express:
+    image: mongo-express:latest
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongodb
+      ME_CONFIG_BASICAUTH: "false"
+    depends_on:
+      - mongodb
+    restart: unless-stopped
+
+  producer:
+    build:
+      context: ./src/nyc_traffic_collision_analysis_and_prediction/datapipeline/Producer/
+    ports:
+      - "5001:5000"
+    env_file:
+      - .env
+    environment:
+      ENABLE_SCHEDULER : "true"
+    depends_on:
+      - kafka
+    restart: unless-stopped
+
+  consumer:
+    build:
+      context: ./src/nyc_traffic_collision_analysis_and_prediction/datapipeline/Consumer/
+    env_file:
+      - .env
+    depends_on:
+      - kafka
+      - mongodb
+      - mongo-express
+    restart: unless-stopped
+  
+  kafka-visuals:
+    image: kbhargava/kafka-visuals
+    ports:
+      - "8080:8080"
+    depends_on:
+      - kafka
+      - zookeeper
+    command: ["zookeeper:2181", "kafka:9092", "DEV"]
+    restart: unless-stopped
+
+
+  # App server
+  spark-flask-app:
+    build:
+      context: ./src/nyc_traffic_collision_analysis_and_prediction/app-server/
+    ports:
+      - "5002:5002"
+    depends_on:
+      - mongodb
+    env_file:
+      - .env
+    restart: unless-stopped
+
+
+volumes:
+  mongo_data:
+  # kafka_internal_data:
+  zookeeper_data:
